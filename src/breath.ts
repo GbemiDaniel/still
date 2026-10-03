@@ -19,6 +19,8 @@ const FEEL = {
 const CALM_SPEED = 0.75;
 // After a release, wait this long before drifting back into the idle breath.
 const RESUME_MS = 7000;
+// A guide takes over the light over this long, so it never jumps.
+const BLEND_MS = 2000;
 // Idle breath: about six breaths a minute (13 s in calm), in the lower part of the range,
 // so holding always has somewhere to go.
 const IDLE_DEPTH = 0.42;
@@ -34,6 +36,13 @@ export function createBreath(isCalm: () => boolean) {
   let sinceRelease = 0;
   let idlePhase = 0;
   let holds = 0;
+  // When off, pointer and keys no longer hold (guided and timer modes use press/letGo or drive).
+  let enabled = true;
+  // Driven by a guide: the value follows a timeline, blended in from where the light was.
+  let driven: number | null = null;
+  let from = 0;
+  let blend = 1;
+  let last = 0;
 
   function set(next: BreathMode) {
     mode = next;
@@ -59,7 +68,12 @@ export function createBreath(isCalm: () => boolean) {
     set('out');
   }
 
+  // Taps on buttons and sheets are for the interface, not for the breath.
+  const isUi = (t: EventTarget | null) =>
+    t instanceof Element && !!t.closest('button, a, input, [role="switch"], [data-ui]');
+
   addEventListener('pointerdown', (e) => {
+    if (!enabled || isUi(e.target)) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     pointers.add(e.pointerId);
     hold();
@@ -76,14 +90,14 @@ export function createBreath(isCalm: () => boolean) {
   const isBreathKey = (e: KeyboardEvent) =>
     (e.code === 'Space' || e.code === 'Enter') && !e.altKey && !e.ctrlKey && !e.metaKey;
   addEventListener('keydown', (e) => {
-    if (!isBreathKey(e)) return;
+    if (!enabled || !isBreathKey(e) || isUi(e.target)) return;
     e.preventDefault();
     if (e.repeat) return;
     keyDown = true;
     hold();
   });
   addEventListener('keyup', (e) => {
-    if (!isBreathKey(e)) return;
+    if (!keyDown || !isBreathKey(e)) return;
     keyDown = false;
     if (!pointers.size) release(true);
   });
@@ -100,6 +114,14 @@ export function createBreath(isCalm: () => boolean) {
   return {
     /** Advance by dt ms and return the breath, 0 (out) to 1 (in), with a little spring give. */
     update(dt: number): number {
+      if (driven !== null) {
+        blend = Math.min(1, blend + dt / BLEND_MS);
+        const k = blend * blend * (3 - 2 * blend);
+        last = from * (1 - k) + driven * k;
+        spring.value = last;
+        spring.velocity = 0;
+        return last;
+      }
       if (mode === 'out') {
         sinceRelease += dt;
         if (sinceRelease >= RESUME_MS) {
@@ -115,6 +137,37 @@ export function createBreath(isCalm: () => boolean) {
       return spring.update(dt);
     },
     get mode() { return mode; },
+    get enabled() { return enabled; },
+    set enabled(on: boolean) {
+      enabled = on;
+      if (!on) drop();
+    },
+    /** Breathe in without a pointer (the timer). */
+    press() { hold(); },
+    /** Breathe out without a pointer. A haptic tick only if asked. */
+    letGo(haptic = false) { release(haptic); },
+    /**
+     * Follow a timeline (0 to 1) instead of the spring. The first value is blended in from
+     * wherever the light was; null hands the light back to the spring, which settles it softly.
+     */
+    drive(value: number | null) {
+      if (value === null) {
+        if (driven === null) return;
+        driven = null;
+        spring.value = last;
+        spring.velocity = 0;
+        spring.target = 0;
+        sinceRelease = 0;
+        set('out');
+        return;
+      }
+      if (driven === null) {
+        from = spring.value;
+        blend = 0;
+        last = from;
+      }
+      driven = value;
+    },
     /** How many times someone has held. */
     get holds() { return holds; },
     onChange(fn: (mode: BreathMode) => void) {
@@ -123,3 +176,5 @@ export function createBreath(isCalm: () => boolean) {
     },
   };
 }
+
+export type Breath = ReturnType<typeof createBreath>;

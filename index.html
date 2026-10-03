@@ -5,54 +5,272 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#050407" />
     <meta name="color-scheme" content="dark" />
-    <meta name="description" content="Still. One warm light that breathes with you." />
+    <meta name="description" content="Still. One warm light that breathes with you. A calm breathing guide and breath timer." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Still" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Still</title>
     <style>
+      :root {
+        --bg: #050407;
+        --ink: rgba(243, 230, 214, .88);
+        --ink-soft: rgba(243, 230, 214, .68);
+        --line-edge: rgba(243, 230, 214, .26);
+        --warm: #ffd9b0;
+        --serif: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+        --sans: 'Jost', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+        /* Where the line's bottom edge sits above the screen's bottom edge. Leaves the controls room on short phones. */
+        --line-bottom: calc(max(18svh, 164px) + env(safe-area-inset-bottom));
+        --ease: cubic-bezier(.3, 0, .2, 1);
+      }
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
       html, body {
         height: 100svh; overflow: hidden; overscroll-behavior: none;
-        background: #050407; color: #f3e6d6;
+        background: var(--bg); color: var(--ink);
         -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
         -webkit-user-select: none; user-select: none; touch-action: none; cursor: default;
+        -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility; font-synthesis: none;
       }
       /* Fixed to the visible viewport, so the field's centre is the screen's centre whatever the browser bars do. */
       canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; opacity: 0; }
       .no-gl body {
         background:
           radial-gradient(circle at 50% 50%, #ffe2bf 0, #f39a4f 4%, rgba(160, 70, 25, .35) 16%, rgba(5, 4, 7, 0) 48%),
-          #050407;
+          var(--bg);
       }
       .no-gl canvas { display: none; }
-      #line, #hint {
+      button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; touch-action: manipulation; }
+      :focus-visible { outline: 2px solid var(--warm); outline-offset: 3px; }
+      .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+      /* ---- The voice: Cormorant Garamond Light Italic, one line at a time ---- */
+      #line, #hint, #count {
         position: fixed; left: 0; right: 0;
-        padding: 0 24px; text-align: center; pointer-events: none;
-        font-family: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
-        font-style: italic; font-weight: 300; letter-spacing: .045em; line-height: 1.2;
+        padding: 0 28px; text-align: center; pointer-events: none;
+        font-family: var(--serif); font-style: italic; font-weight: 300;
+        letter-spacing: .045em; line-height: 1.22; text-wrap: balance;
+        font-kerning: normal; font-variant-ligatures: common-ligatures;
       }
-      #line { bottom: calc(17svh + env(safe-area-inset-bottom)); }
-      #line, #hint { opacity: 0; transition: opacity 2.6s cubic-bezier(.3, 0, .2, 1); }
+      #line { bottom: var(--line-bottom); }
+      #line, #hint { opacity: 0; transition: opacity 2.6s var(--ease); }
       #line.on { opacity: 1; }
-      /* The phrases share one cell and cross-fade, so the line never shifts. */
-      #line { display: grid; font-size: clamp(21px, 5.6vw, 34px); color: rgba(243, 230, 214, .84); }
+      /* Two spans share one cell and cross-fade, so the line never shifts. */
+      #line { display: grid; font-size: clamp(23px, 6vw, 36px); color: var(--ink); }
       #line span { grid-area: 1 / 1; opacity: 0; transition: opacity 1.1s cubic-bezier(.4, 0, .2, 1); }
       #line span.on { opacity: 1; transition-delay: .35s; transition-duration: 1.6s; }
       /* Its own layer, below the line, so its fade never repaints the line. */
       #hint {
-        top: calc(83svh - env(safe-area-inset-bottom) + 1.1em);
-        font-size: clamp(14px, 3.7vw, 18px); letter-spacing: .14em; color: rgba(243, 230, 214, .5);
+        top: calc(100svh - var(--line-bottom) + 1.15em);
+        font-size: clamp(14px, 3.7vw, 18px); letter-spacing: .14em; color: var(--ink-soft);
       }
       #hint.on { opacity: 1; transition-duration: 3.2s; }
+      /* Timer readout: the one place that needs steady digits, so it takes the sans. */
+      #count {
+        bottom: calc(var(--line-bottom) + 3.2em);
+        font-family: var(--sans); font-style: normal; font-weight: 400;
+        font-size: clamp(30px, 8vw, 44px); letter-spacing: .06em;
+        font-variant-numeric: tabular-nums lining-nums;
+        color: var(--ink); opacity: 0; transition: opacity .8s var(--ease); contain: layout paint;
+      }
+      #count.on { opacity: 1; }
+      #count small { font-size: .42em; letter-spacing: .12em; margin-left: .35em; color: var(--ink-soft); }
+
+      #progress {
+        position: fixed; left: 0; right: 0; top: env(safe-area-inset-top); height: 2px;
+        pointer-events: none; opacity: 0; transition: opacity 1.2s var(--ease);
+      }
+      #progress i { display: block; height: 100%; background: rgba(255, 190, 130, .62); transform-origin: 0 50%; transform: scaleX(0); }
+      #progress.on { opacity: 1; }
+
+      /* ---- The tools: Jost, quiet, large to touch ---- */
+      #ui { opacity: 0; transition: opacity 1.6s var(--ease); font-family: var(--sans); font-weight: 400; }
+      #ui.on { opacity: 1; }
+
+      #gear {
+        position: fixed; z-index: 3;
+        top: calc(env(safe-area-inset-top) + 6px); right: calc(env(safe-area-inset-right) + 6px);
+        width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%;
+        color: var(--ink-soft); transition: color .3s, opacity 1s var(--ease);
+      }
+      #gear:active { color: var(--ink); }
+      #gear svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; }
+      [data-scene*="-run"] #gear, [data-scene="timer-in"] #gear, [data-scene="timer-hold"] #gear, [data-scene="timer-out"] #gear { opacity: .55; }
+
+      #bottom {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; pointer-events: none;
+        padding: 0 20px calc(env(safe-area-inset-bottom) + 10px);
+        display: flex; flex-direction: column; align-items: center;
+      }
+      #bottom::before {
+        content: ''; position: absolute; inset: -56px 0 0; z-index: -1; pointer-events: none;
+        background: linear-gradient(to bottom, rgba(5, 4, 7, 0), rgba(5, 4, 7, .82) 38%, rgba(5, 4, 7, .94));
+        opacity: 0; transition: opacity 1s var(--ease);
+      }
+      [data-scene$="setup"] #bottom::before, [data-scene="timer-result"] #bottom::before { opacity: 1; }
+      #bottom > * { width: 100%; max-width: 440px; }
+
+      /* Panes share one cell; only the current one shows and takes focus (inert is set from script). */
+      #panel { display: grid; }
+      .pane {
+        grid-area: 1 / 1; align-self: end; display: flex; flex-direction: column; gap: 12px;
+        opacity: 0; visibility: hidden; transition: opacity .6s var(--ease), visibility 0s .6s;
+      }
+      .pane.on { opacity: 1; visibility: visible; transition: opacity .9s var(--ease) .15s, visibility 0s; }
+      .note { text-align: center; font-size: 15px; letter-spacing: .06em; color: var(--ink-soft); line-height: 1.45; padding: 0 12px; text-wrap: balance; }
+
+      .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .chip {
+        pointer-events: auto; min-height: 56px; border-radius: 16px; border: 1px solid var(--line-edge);
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+        font-size: 16px; letter-spacing: .06em; color: var(--ink-soft);
+        transition: color .3s, border-color .3s, background-color .3s;
+      }
+      .chip small { font-size: 12.5px; letter-spacing: .04em; opacity: .9; }
+      .chips.small .chip { min-height: 48px; border-radius: 14px; }
+      .chip[aria-pressed="true"] { color: #fbeadb; border-color: rgba(255, 196, 140, .62); background: rgba(255, 170, 100, .12); }
+      .chip:active { background: rgba(255, 170, 100, .18); }
+
+      .btn {
+        pointer-events: auto; min-height: 54px; min-width: 112px; padding: 0 28px; border-radius: 999px;
+        border: 1px solid var(--line-edge); font-size: 17px; letter-spacing: .1em; color: var(--ink);
+        transition: background-color .3s, border-color .3s, opacity .3s;
+      }
+      .btn.primary { border-color: rgba(255, 196, 140, .6); background: rgba(255, 170, 100, .14); color: #fdeee0; }
+      .btn.quiet { border-color: transparent; color: var(--ink-soft); min-width: 84px; padding: 0 18px; }
+      .btn:active { background: rgba(255, 170, 100, .22); }
+      .pane > .btn { align-self: center; width: 100%; }
+
+      #actions {
+        display: flex; justify-content: center; align-items: center; gap: 12px; min-height: 54px;
+        position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 10px);
+        margin: 0 auto; padding: 0 20px; max-width: 440px;
+        opacity: 0; visibility: hidden; transition: opacity .7s var(--ease), visibility 0s .7s;
+      }
+      #actions.on { opacity: 1; visibility: visible; transition: opacity 1s var(--ease), visibility 0s; }
+      [data-scene="guided-end"] #actions.on, [data-scene="timer-result"] #actions.on { transition-delay: 2.6s, 0s; }
+      #actions .btn { flex: 1 1 0; min-width: 0; }
+      #actions .btn.quiet { flex: 0 0 auto; }
+
+      #tabs {
+        display: grid; grid-template-columns: repeat(3, 1fr); pointer-events: none;
+        opacity: 1; visibility: visible; transition: opacity 1s var(--ease) .2s, visibility 0s;
+      }
+      #tabs.away { opacity: 0; visibility: hidden; transition: opacity .6s var(--ease), visibility 0s .6s; }
+      #tabs button {
+        pointer-events: auto; min-height: 52px; font-size: 16px; letter-spacing: .12em;
+        color: var(--ink-soft); position: relative; transition: color .4s;
+      }
+      #tabs button::after {
+        content: ''; position: absolute; left: 50%; bottom: 8px; width: 4px; height: 4px; margin-left: -2px;
+        border-radius: 50%; background: var(--warm); opacity: 0; transition: opacity .4s;
+      }
+      #tabs button[aria-current="true"] { color: #fbeadb; }
+      #tabs button[aria-current="true"]::after { opacity: .9; }
+      #notice {
+        text-align: center; font-size: 13px; letter-spacing: .04em; line-height: 1.35; color: var(--ink-soft);
+        padding: 2px 8px 0; transition: opacity 1s var(--ease);
+      }
+      #ui.running #notice { opacity: 0; }
+
+      /* Timer result */
+      #result { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; padding-bottom: 4px; }
+      #result div { display: flex; flex-direction: column; gap: 4px; }
+      #result dt { font-size: 13px; letter-spacing: .14em; color: var(--ink-soft); order: 2; }
+      #result dd { font-size: clamp(26px, 7vw, 34px); letter-spacing: .04em; font-variant-numeric: tabular-nums lining-nums; color: var(--ink); }
+      #result dd small { font-size: .5em; margin-left: .25em; color: var(--ink-soft); letter-spacing: .1em; }
+
+      /* ---- Options sheet ---- */
+      #sheet {
+        position: fixed; inset: 0; z-index: 5; display: flex; align-items: flex-end; justify-content: center;
+        background: rgba(5, 4, 7, .72); opacity: 0; visibility: hidden;
+        transition: opacity .5s var(--ease), visibility 0s .5s;
+        font-family: var(--sans); touch-action: manipulation;
+      }
+      #sheet.open { opacity: 1; visibility: visible; transition: opacity .5s var(--ease), visibility 0s; }
+      #sheet .card {
+        width: 100%; max-width: 480px; padding: 22px 22px calc(env(safe-area-inset-bottom) + 18px);
+        background: #0c0910; border: 1px solid var(--line-edge); border-bottom: 0; border-radius: 24px 24px 0 0;
+        display: flex; flex-direction: column; gap: 6px;
+      }
+      #sheet h2 { font-family: var(--serif); font-style: italic; font-weight: 300; font-size: 28px; letter-spacing: .045em; margin-bottom: 6px; }
+      .switch {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px; text-align: left;
+        min-height: 64px; padding: 6px 2px; border-top: 1px solid rgba(243, 230, 214, .12);
+      }
+      .switch .t { display: flex; flex-direction: column; gap: 3px; }
+      .switch b { font-weight: 400; font-size: 17px; letter-spacing: .06em; color: var(--ink); }
+      .switch i { font-style: normal; font-size: 13.5px; letter-spacing: .03em; color: var(--ink-soft); }
+      .knob { flex: none; width: 52px; height: 32px; border-radius: 16px; border: 1px solid var(--line-edge); position: relative; transition: background-color .3s, border-color .3s; }
+      .knob::after {
+        content: ''; position: absolute; left: 4px; top: 4px; width: 22px; height: 22px; border-radius: 50%;
+        background: var(--ink-soft); transition: transform .3s var(--ease), background-color .3s;
+      }
+      .switch[aria-checked="true"] .knob { background: rgba(255, 170, 100, .22); border-color: rgba(255, 196, 140, .62); }
+      .switch[aria-checked="true"] .knob::after { transform: translateX(20px); background: var(--warm); }
+      #sheet .small { font-size: 13.5px; letter-spacing: .03em; line-height: 1.5; color: var(--ink-soft); padding: 10px 2px 0; border-top: 1px solid rgba(243, 230, 214, .12); }
+      #sheet .small + .small { border-top: 0; padding-top: 4px; }
+      #sheet .btn { align-self: stretch; margin-top: 12px; }
+
+      /* ---- Calm: slower fades, nothing that moves ---- */
+      .calm #line span.on { transition-duration: 2.6s; }
+      .calm #line span { transition-duration: 1.8s; }
+      .calm .pane.on, .calm #actions.on, .calm #ui { transition-duration: 1.6s; }
+      .calm .knob::after { transition-duration: .01s; }
     </style>
   </head>
   <body>
     <canvas id="c" aria-hidden="true"></canvas>
-    <p id="line">
-      <span data-mode="rest" class="on">breathe with the light</span>
-      <span data-mode="in" aria-hidden="true">breathe in</span>
-      <span data-mode="out" aria-hidden="true">breathe out</span>
-    </p>
-    <p id="hint"></p>
+    <p id="line" aria-hidden="true"><span class="on">breathe with the light</span><span></span></p>
+    <p id="hint" aria-hidden="true"></p>
+    <p id="count" aria-hidden="true"></p>
+    <div id="progress" aria-hidden="true"><i></i></div>
+    <p id="status" class="sr" role="status" aria-live="polite"></p>
+
+    <div id="ui" data-scene="free">
+      <button id="gear" type="button" aria-haspopup="dialog" aria-controls="sheet" aria-expanded="false" aria-label="options">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
+      </button>
+
+      <div id="bottom">
+        <div id="panel">
+          <section class="pane" data-pane="guided-setup" aria-label="guided breathing">
+            <div class="chips" id="paces" role="group" aria-label="pace"></div>
+            <div class="chips small" id="lengths" role="group" aria-label="length"></div>
+            <button class="btn primary" id="begin-guided" type="button"></button>
+          </section>
+          <section class="pane" data-pane="timer-setup" aria-label="breath timer">
+            <p class="note" id="timer-note"></p>
+            <button class="btn primary" id="begin-timer" type="button"></button>
+          </section>
+          <section class="pane" data-pane="timer-result" aria-label="your breath">
+            <dl id="result"></dl>
+          </section>
+        </div>
+        <div id="actions" role="group"></div>
+        <nav id="tabs" aria-label="mode"></nav>
+        <p id="notice"></p>
+      </div>
+    </div>
+
+    <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" data-ui inert>
+      <div class="card">
+        <h2 id="sheet-title"></h2>
+        <button class="switch" id="sw-sound" type="button" role="switch" aria-checked="false">
+          <span class="t"><b></b><i></i></span><span class="knob"></span>
+        </button>
+        <button class="switch" id="sw-awake" type="button" role="switch" aria-checked="true">
+          <span class="t"><b></b><i></i></span><span class="knob"></span>
+        </button>
+        <p class="small" id="privacy"></p>
+        <p class="small" id="notice-long"></p>
+        <button class="btn" id="sheet-close" type="button"></button>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

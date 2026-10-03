@@ -1,4 +1,5 @@
 import '@fontsource/cormorant-garamond/latin-300-italic.css';
+import '@fontsource/jost/latin-400.css';
 import { createGovernor } from './engine/governor';
 import { mountDebug } from './engine/debug';
 import { subscribe } from './engine/loop';
@@ -6,10 +7,13 @@ import { isCalm, onCalmChange } from './engine/motion';
 import { createField, type FieldSettings, type FieldFrame } from './field';
 import { createBreath } from './breath';
 import { createGrain } from './grain';
+import { createSound } from './sound';
+import { createApp } from './app';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#c')!;
-const line = document.querySelector<HTMLElement>('#line')!;
-const hint = document.querySelector<HTMLElement>('#hint')!;
+
+// A timed session holds quality still: a step up mid-breath would show as a small pop.
+let inSession = false;
 
 // What every quality level changes. Resolution scale comes from the governor's SCALES.
 // Level 0 is full quality: native pixel ratio, five octaves of warped haze in a buffer at
@@ -23,15 +27,22 @@ const governor = createGovernor<FieldSettings>({
   ],
   warmup: () => draw(0),
   fadeMs: 2400,
+  canRaise: () => !inSession,
 });
 
 const field = createField(canvas);
 if (!field) document.documentElement.classList.add('no-gl');
 
 let calm = isCalm();
-onCalmChange((c) => (calm = c));
+document.documentElement.classList.toggle('calm', calm);
+onCalmChange((c) => {
+  calm = c;
+  document.documentElement.classList.toggle('calm', c);
+});
 
 const breath = createBreath(() => calm);
+const sound = createSound();
+const app = createApp({ breath, sound, isCalm: () => calm, onSession: (a) => (inSession = a) });
 let elapsed = 0;
 
 // The light sits at the exact centre of the viewport and never moves off it: the breath
@@ -50,6 +61,7 @@ function draw(dt: number) {
   const b = breath.update(dt);
   frame.breath = calm ? 0.15 + 0.65 * b : b;
   frame.time = elapsed;
+  sound.update(b, dt);
 
   field.resize(governor.pixelRatio, governor.settings.hazeScale);
   field.draw(frame, governor.settings);
@@ -57,27 +69,19 @@ function draw(dt: number) {
 
 mountDebug(governor);
 governor.start();
-subscribe((dt) => {
+subscribe((dt, _t, raw) => {
+  app.update(dt, raw);
   draw(dt);
-  canvas.style.opacity = String(governor.fade);
-  grain.update(governor.fade, calm);
+  // The light softens at the end of a guided session; opacity is compositor work.
+  const o = governor.fade * app.dim;
+  canvas.style.opacity = String(o);
+  grain.update(o, calm);
 });
 
-// The line follows the breath: rest, in, out. Only one phrase is visible at a time.
-const phrases = line.querySelectorAll<HTMLElement>('[data-mode]');
-breath.onChange((mode) => {
-  for (const el of phrases) {
-    const on = el.dataset.mode === mode;
-    el.classList.toggle('on', on);
-    el.setAttribute('aria-hidden', String(!on));
-  }
-  // The hint has done its job after the first hold.
-  if (mode === 'in') hint.classList.remove('on');
-});
+// The line arrives after the light, once the font is ready, and the controls after it.
+document.fonts.ready.then(() => app.reveal());
 
-// The line arrives after the light, once the font is ready; the hint follows if nobody has held yet.
-hint.textContent = matchMedia('(pointer: coarse)').matches ? 'touch and hold' : 'press and hold';
-document.fonts.ready.then(() => {
-  setTimeout(() => line.classList.add('on'), calm ? 600 : 1400);
-  setTimeout(() => breath.holds || hint.classList.add('on'), calm ? 2600 : 4200);
-});
+// Offline and installable: the service worker only caches Still's own files.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  addEventListener('load', () => { void navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}

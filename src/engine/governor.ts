@@ -21,6 +21,8 @@ export interface GovernorOptions<T> {
   warmup?: () => void;
   /** Fade-in duration in ms. */
   fadeMs?: number;
+  /** Return false to hold quality still (during a timed session, say). Steps down still happen. */
+  canRaise?: () => boolean;
 }
 
 const IGNORE_FRAMES = 30;
@@ -29,6 +31,14 @@ const MEASURE_FRAMES = 60;
 const MIN_SAMPLES = 20;
 const CAL_MAX_MS = 5000;
 const WINDOW = 60;
+// Step up: a 60 Hz display never reports under 12 ms, so "fast" there means holding the
+// vsync interval. After a step down, wait RAISE_FIRST_MS at a steady 60 fps, then try one
+// level up. If that slips within PROBE_MS the wait doubles (up to RAISE_MAX_MS), so a phone
+// that cannot sustain a level stops trying it.
+const STEADY_AVG = 17.5;
+const RAISE_FIRST_MS = 15000;
+const RAISE_MAX_MS = 120000;
+const PROBE_MS = 10000;
 
 export function createGovernor<T>(opts: GovernorOptions<T>) {
   const fadeMs = opts.fadeMs ?? 1200;
@@ -52,6 +62,9 @@ export function createGovernor<T>(opts: GovernorOptions<T>) {
   let slowFor = 0;
   let verySlowFor = 0;
   let fastFor = 0;
+  let steadyFor = 0;
+  let raiseAfter = RAISE_FIRST_MS;
+  let sinceRaise = Infinity;
 
   const fmt = (n: number) => String(Math.round(n * 100) / 100);
 
@@ -67,7 +80,7 @@ export function createGovernor<T>(opts: GovernorOptions<T>) {
 
   function resetWatch() {
     ringCount = ringIdx = ringSum = 0;
-    slowFor = verySlowFor = fastFor = 0;
+    slowFor = verySlowFor = fastFor = steadyFor = 0;
   }
 
   function calibrate() {
@@ -100,19 +113,29 @@ export function createGovernor<T>(opts: GovernorOptions<T>) {
     ringIdx = (ringIdx + 1) % WINDOW;
     if (ringCount < WINDOW) return;
     const avg = ringSum / WINDOW;
+    sinceRaise += dt;
 
     verySlowFor = avg > 33 ? verySlowFor + dt : 0;
     slowFor = avg > 20 ? slowFor + dt : 0;
     fastFor = avg < 12 ? fastFor + dt : 0;
+    steadyFor = avg <= STEADY_AVG && level > 0 ? steadyFor + dt : 0;
 
-    const step = (delta: number, secs: number) => {
+    const step = (delta: number, why: string) => {
       const to = Math.max(0, Math.min(3, level + delta)) as Level;
-      if (to !== level) emit(level, to, `avg ${avg.toFixed(1)} ms over ${secs} s`);
+      if (to !== level) {
+        // A step up that slipped back down soon after: wait longer before trying again.
+        if (delta > 0 && sinceRaise < PROBE_MS) raiseAfter = Math.min(raiseAfter * 2, RAISE_MAX_MS);
+        if (delta < 0) sinceRaise = 0;
+        emit(level, to, `avg ${avg.toFixed(1)} ms ${why}`);
+      }
       resetWatch();
     };
-    if (verySlowFor >= 1000) step(2, 1);
-    else if (slowFor >= 1500) step(1, 1.5);
-    else if (fastFor >= 6000) step(-1, 6);
+    if (verySlowFor >= 1000) step(2, 'over 1 s');
+    else if (slowFor >= 1500) step(1, 'over 1.5 s');
+    else if (fastFor >= 6000) step(-1, 'over 6 s');
+    else if (steadyFor >= raiseAfter && (opts.canRaise?.() ?? true)) {
+      step(-1, `steady for ${Math.round(raiseAfter / 1000)} s, trying one level up`);
+    }
   }
 
   function tick(_dt: number, time: number, rawDt: number) {
