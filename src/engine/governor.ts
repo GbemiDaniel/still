@@ -25,6 +25,9 @@ export interface GovernorOptions<T> {
 
 const IGNORE_FRAMES = 30;
 const MEASURE_FRAMES = 60;
+// Never decide on a handful of frames; if frames are this scarce, give up after CAL_MAX_MS.
+const MIN_SAMPLES = 20;
+const CAL_MAX_MS = 5000;
 const WINDOW = 60;
 
 export function createGovernor<T>(opts: GovernorOptions<T>) {
@@ -37,6 +40,7 @@ export function createGovernor<T>(opts: GovernorOptions<T>) {
   let started = false;
   let calibrated = forced !== null;
   let fadeStart = 0;
+  let calStart = 0;
   let fade = 0;
   let frames = 0;
   const samples: number[] = [];
@@ -69,9 +73,22 @@ export function createGovernor<T>(opts: GovernorOptions<T>) {
   function calibrate() {
     calibrated = true;
     const n = samples.length;
-    const avg = n ? samples.reduce((a, b) => a + b, 0) / n : 16.7;
-    const to: Level = avg <= 20 ? 0 : avg <= 26 ? 1 : avg <= 33 ? 2 : 3;
-    emit(null, to, `calibration avg ${avg.toFixed(1)} ms over ${n} frames`);
+    if (!n) {
+      // Not even the ignored frames arrived in time: the device is struggling.
+      emit(null, 3, `calibration got no frames in ${CAL_MAX_MS / 1000} s`);
+      resetWatch();
+      return;
+    }
+    const avg = samples.reduce((a, b) => a + b, 0) / n;
+    const sorted = samples.slice().sort((a, b) => a - b);
+    const median = sorted[n >> 1];
+    const worst = sorted[n - 1];
+    // Decide on the median: one-off load stalls (font decode, GC, first paints) say nothing
+    // about steady cost but can drag a mean up by several ms. Frame intervals snap to vsync,
+    // so a device that just misses 60 Hz reads 33.3 ms: that is level 2, not 3. The rolling
+    // watch below still steps further down within seconds if level 2 is too much.
+    const to: Level = median <= 20 ? 0 : median <= 26 ? 1 : median <= 34 ? 2 : 3;
+    emit(null, to, `calibration median ${median.toFixed(1)} ms (avg ${avg.toFixed(1)}, worst ${worst.toFixed(0)}) over ${n} frames`);
     resetWatch();
   }
 
@@ -102,10 +119,14 @@ export function createGovernor<T>(opts: GovernorOptions<T>) {
     if (!fadeStart) fadeStart = time;
     fade = Math.min(1, (time - fadeStart) / fadeMs);
     if (!calibrated) {
+      if (!calStart) calStart = time;
       frames++;
       if (frames > IGNORE_FRAMES) samples.push(rawDt);
-      // Decide on 60 samples, or with what is measured just before the fade completes.
-      if (samples.length >= MEASURE_FRAMES || fade >= 0.95) calibrate();
+      // Decide on 60 samples, or near the end of the fade if there are enough, or give up
+      // waiting after CAL_MAX_MS.
+      if (samples.length >= MEASURE_FRAMES ||
+          (fade >= 0.95 && samples.length >= MIN_SAMPLES) ||
+          time - calStart >= CAL_MAX_MS) calibrate();
       return;
     }
     if (forced === null && fade >= 1) watch(rawDt);

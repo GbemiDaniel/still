@@ -51,5 +51,8 @@ void main() {
   vec2 warp = vec2(fbm(q + vec2(0.0, t * 0.021), 2),
                    fbm(q + vec2(5.2, 1.3) - t * 0.017, 2)) - 0.5;
   float h = fbm(q + uWarp * 0.9 * warp + vec2(t * 0.008, 0.0), uOctaves);
-  gl_FragColor = vec4(smoothstep(0.3, 0.8, h), 0.0, 0.0, 1.0);
+  // Half-step dither before the 8-bit buffer, so upsampled haze keeps its soft gradient
+  // instead of stepping into streaks.
+  float dither = (hash12(gl_FragCoord.xy) - 0.5) / 255.0;
+  gl_FragColor = vec4(smoothstep(0.3, 0.8, h) + dither, 0.0, 0.0, 1.0);
 }

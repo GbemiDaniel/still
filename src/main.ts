@@ -5,6 +5,7 @@ import { subscribe } from './engine/loop';
 import { isCalm, onCalmChange } from './engine/motion';
 import { createField, type FieldSettings, type FieldFrame } from './field';
 import { createBreath } from './breath';
+import { createGrain } from './grain';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#c')!;
 const line = document.querySelector<HTMLElement>('#line')!;
@@ -33,7 +34,12 @@ onCalmChange((c) => (calm = c));
 const breath = createBreath(() => calm);
 let elapsed = 0;
 
-const frame: FieldFrame = { time: 0, breath: 0, lightX: 0, lightY: 0.07, grainSeed: 0, grain: 0.034 };
+// The light sits at the exact centre of the viewport and never moves off it: the breath
+// only changes its size and energy (radially), and the haze carries the slow motion.
+// Any positional drift starts in one direction and reads as off-centre, so there is none.
+const frame: FieldFrame = { time: 0, breath: 0, lightX: 0, lightY: 0 };
+// Grain lives in its own full device-resolution layer, so the governor's scale never coarsens it.
+const grain = createGrain();
 
 function draw(dt: number) {
   if (!field) return;
@@ -44,13 +50,6 @@ function draw(dt: number) {
   const b = breath.update(dt);
   frame.breath = calm ? 0.15 + 0.65 * b : b;
   frame.time = elapsed;
-  // Slow Lissajous drift a little above centre, leaving room for the type.
-  // The light rises a touch on the in-breath, like a chest.
-  const amp = calm ? 0.025 : 0.05;
-  frame.lightX = amp * Math.sin(elapsed * 0.11);
-  frame.lightY = 0.07 + amp * 0.8 * Math.sin(elapsed * 0.083 + 1.3) + (calm ? 0 : 0.02 * b);
-  // Grain renews at 24 fps like film; in calm mode it holds still.
-  frame.grainSeed = calm ? 1 : Math.floor(performance.now() / (1000 / 24)) % 997;
 
   field.resize(governor.pixelRatio, governor.settings.hazeScale);
   field.draw(frame, governor.settings);
@@ -61,6 +60,7 @@ governor.start();
 subscribe((dt) => {
   draw(dt);
   canvas.style.opacity = String(governor.fade);
+  grain.update(governor.fade, calm);
 });
 
 // The line follows the breath: rest, in, out. Only one phrase is visible at a time.

@@ -1,7 +1,8 @@
 /**
  * Full-screen shader field in two passes:
  * 1. haze.frag renders the slow fbm haze into a small offscreen buffer (sized in CSS pixels).
- * 2. field.frag upsamples it and adds the light, tone curve and grain at full resolution.
+ * 2. field.frag upsamples it and adds the light, tone curve and dither.
+ * Film grain is a separate full-resolution layer (grain.ts).
  */
 import hazeFrag from './haze.frag?raw';
 import fieldFrag from './field.frag?raw';
@@ -20,8 +21,6 @@ export interface FieldFrame {
   breath: number;
   lightX: number;
   lightY: number;
-  grainSeed: number;
-  grain: number;
 }
 
 export interface Field {
@@ -70,7 +69,7 @@ export function createField(canvas: HTMLCanvasElement): Field | null {
 
   function build() {
     haze = program(hazeFrag, ['uBuf', 'uRes', 'uTime', 'uBreath', 'uOctaves', 'uWarp']);
-    comp = program(fieldFrag, ['uHaze', 'uRes', 'uBreath', 'uLight', 'uGrainSeed', 'uGrain']);
+    comp = program(fieldFrag, ['uHaze', 'uRes', 'uBreath', 'uLight']);
     const buf = gl!.createBuffer();
     gl!.bindBuffer(gl!.ARRAY_BUFFER, buf);
     gl!.bufferData(gl!.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl!.STATIC_DRAW);
@@ -135,8 +134,6 @@ export function createField(canvas: HTMLCanvasElement): Field | null {
       gl.uniform2f(comp.u.uRes, canvas.width, canvas.height);
       gl.uniform1f(comp.u.uBreath, f.breath);
       gl.uniform2f(comp.u.uLight, f.lightX, f.lightY);
-      gl.uniform1f(comp.u.uGrainSeed, f.grainSeed);
-      gl.uniform1f(comp.u.uGrain, f.grain);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
   };

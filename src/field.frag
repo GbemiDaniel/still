@@ -1,4 +1,5 @@
-// Still, pass 2: one warm light breathing in the haze, tone curve and film grain.
+// Still, pass 2: one warm light breathing in the haze, tone curve and dither.
+// Film grain is not drawn here: it is a full device-resolution layer above the canvas (grain.ts).
 // Runs at full resolution, so it stays cheap. GLSL ES 1.00 for WebGL2 and WebGL1.
 precision highp float;
 
@@ -6,8 +7,6 @@ uniform sampler2D uHaze;  // pass 1 output, red channel
 uniform vec2 uRes;        // drawing buffer size in pixels
 uniform float uBreath;    // 0 (out) .. 1 (in)
 uniform vec2 uLight;      // light centre from screen centre, in field units
-uniform float uGrainSeed; // changes at film rate, fixed in calm mode
-uniform float uGrain;     // grain strength
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -40,8 +39,10 @@ void main() {
   vec3 hot = vec3(1.0, 0.90, 0.76);
 
   vec3 col = deep + dusk * h * (1.0 + 1.5 * b);
-  col += ember * wide * (0.12 + 0.30 * h) * energy;
-  col += amber * halo * (0.45 + 0.35 * h) * energy;
+  // The haze tints the glow but only lightly, so its uneven shapes never pull the glow
+  // off centre. Same average as before, about half the swing.
+  col += ember * wide * (0.16 + 0.20 * h) * energy;
+  col += amber * halo * (0.50 + 0.20 * h) * energy;
   col += hot * core * 1.1 * energy;
 
   // Vignette that opens on the in-breath, so the whole field follows, then a soft
@@ -51,11 +52,10 @@ void main() {
   col = 1.0 - exp(-col * 1.25);
   col = pow(col, vec3(1.0 / 2.2));
 
-  // Film grain (triangular, so it also dithers away banding). Lighter in the highlights.
-  vec2 g = gl_FragCoord.xy + uGrainSeed * vec2(113.0, 71.0);
-  float n = hash12(g) + hash12(g + 19.19) - 1.0;
-  float lum = dot(col, vec3(0.299, 0.587, 0.114));
-  col += n * uGrain * (1.0 - 0.6 * lum);
+  // Triangular dither of one 8-bit step: invisible as texture, but it breaks the long
+  // smooth falloff into noise instead of bands. Static, so it never shimmers.
+  float n = hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy + 19.19) - 1.0;
+  col += n / 255.0;
 
   gl_FragColor = vec4(col, 1.0);
 }
