@@ -24,12 +24,14 @@ void main() {
 
   // Light: a small hot core, a tight halo and a long faint falloff that the haze catches.
   float d = length(p - uLight);
-  float r = mix(0.05, 0.085, b);
-  float energy = mix(0.75, 1.15, b);
+  // Idle breathing stays in the lower part of the range; a held breath takes it to 1,
+  // where the light swells, its falloff reaches across the field and the haze warms up.
+  float r = mix(0.045, 0.11, b);
+  float energy = mix(0.7, 1.4, b);
   float core = exp(-(d * d) / (r * r));
   float halo = (r * r * 0.6) / (d * d + r * r * 0.6);
   halo *= sqrt(halo);
-  float wide = exp(-d * mix(7.5, 5.8, b));
+  float wide = exp(-d * mix(8.0, 4.4, b));
 
   vec3 deep = vec3(0.0009, 0.0008, 0.0016);
   vec3 dusk = vec3(0.004, 0.0035, 0.009);
@@ -37,14 +39,15 @@ void main() {
   vec3 amber = vec3(1.0, 0.60, 0.28);
   vec3 hot = vec3(1.0, 0.90, 0.76);
 
-  vec3 col = deep + dusk * h;
+  vec3 col = deep + dusk * h * (1.0 + 1.5 * b);
   col += ember * wide * (0.12 + 0.30 * h) * energy;
   col += amber * halo * (0.45 + 0.35 * h) * energy;
   col += hot * core * 1.1 * energy;
 
-  // Vignette, then a soft filmic curve and sRGB encode.
-  float v = smoothstep(1.15, 0.15, length(p * vec2(1.0, 0.85)));
-  col *= mix(0.45, 1.0, v);
+  // Vignette that opens on the in-breath, so the whole field follows, then a soft
+  // filmic curve and sRGB encode.
+  float v = smoothstep(1.15 + 0.45 * b, 0.15, length(p * vec2(1.0, 0.85)));
+  col *= mix(0.45 + 0.25 * b, 1.0, v);
   col = 1.0 - exp(-col * 1.25);
   col = pow(col, vec3(1.0 / 2.2));
 
