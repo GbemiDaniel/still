@@ -1,6 +1,6 @@
 # Notes
 
-Status: Step 2 built (hold to breathe in, release to breathe out, soft spring, haptic tick on release). Not yet tested on a real phone.
+Status: Step 2 built (hold to breathe in, release to breathe out, soft spring, haptic tick on release). Not yet tested on a real phone. Not deployed: no Vercel project is linked yet (see Next).
 
 ## What exists
 - `src/haze.frag`: pass 1, slow warped fbm haze rendered into a small offscreen buffer.
@@ -43,7 +43,7 @@ Status: Step 2 built (hold to breathe in, release to breathe out, soft spring, h
 - The governor only steps up when the average is under 12 ms for 6 s, which a 60 Hz vsynced display never reports. Once it steps down it stays down. Decide whether to change that rule in `src/engine/governor.ts`.
 - Calibration runs during load (font, first compile) and may read pessimistically. Consider whether to start measuring after fonts are ready.
 - Faint streaking in calm mode: try a half-texel dither on the haze sample or a float haze buffer where supported.
-- Link a Vercel project to GbemiDaniel/still so pushes to main deploy, then confirm the URL.
+- Link a Vercel project to GbemiDaniel/still so pushes to main deploy, then confirm the URL. Still not linked as of step 2: the claude.ai Vercel connector can list projects but gets 403 on the dees-projects scope, and the Vercel CLI is not installed. Fix: import the repo at vercel.com/new (Vite preset, no settings needed), or re-authorize the connector for that team.
 - Test step 2 on a real phone: the haptic tick (Android vibrate, iOS 18+ switch trick), long-press behaviour, thumb hold through a full breath, and how the spring feels in the hand.
 - The governor settles at level 2 or 3 on the throttled profile and never steps back up (see the first item). Worth fixing before step 3 so a phone that warms up recovers quality.
 - Step 3: sound that follows the breath behind a toggle (src/engine/audio.ts is ready), final typography, performance check, case study draft in README.md.
