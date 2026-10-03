@@ -3,17 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#050407" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Still. One warm light that breathes with you." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>exp-starter</title>
+    <title>Still</title>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      html, body { height: 100svh; overflow: hidden; overscroll-behavior: none; background: #000; color: #fff; }
-      canvas { display: block; width: 100%; height: 100svh; touch-action: none; }
+      html, body {
+        height: 100svh; overflow: hidden; overscroll-behavior: none;
+        background: #050407; color: #f3e6d6;
+        -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
+      }
+      canvas { display: block; width: 100%; height: 100svh; touch-action: none; opacity: 0; }
+      .no-gl body {
+        background:
+          radial-gradient(circle at 50% 42%, #ffe2bf 0, #f39a4f 4%, rgba(160, 70, 25, .35) 16%, rgba(5, 4, 7, 0) 48%),
+          #050407;
+      }
+      .no-gl canvas { display: none; }
+      #line {
+        position: fixed; left: 0; right: 0;
+        bottom: calc(17svh + env(safe-area-inset-bottom));
+        padding: 0 24px; text-align: center; pointer-events: none;
+        font-family: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+        font-style: italic; font-weight: 300;
+        font-size: clamp(21px, 5.6vw, 34px); letter-spacing: .045em; line-height: 1.2;
+        color: rgba(243, 230, 214, .84);
+        opacity: 0; transition: opacity 2.6s cubic-bezier(.3, 0, .2, 1);
+      }
+      #line.on { opacity: 1; }
     </style>
   </head>
   <body>
-    <canvas id="c"></canvas>
+    <canvas id="c" aria-hidden="true"></canvas>
+    <p id="line">breathe with the light</p>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
