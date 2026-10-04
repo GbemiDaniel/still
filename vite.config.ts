@@ -19,7 +19,11 @@ function offline(): Plugin {
   return {
     name: 'still-offline',
     apply: 'build',
+    // Runs last, after Vite has added index.html to the bundle: the version must change when only
+    // the page changes (all the CSS is inline there), or installed copies would never update.
+    enforce: 'post',
     generateBundle(_options, bundle) {
+      if (!bundle['index.html']) this.error('index.html missing from the bundle: the offline version would not track it');
       const built = Object.keys(bundle).filter((f) => f !== 'index.html' && !f.endsWith('.map') && !f.endsWith('.woff'));
       const pub = readdirSync('public').filter((f) => f !== 'sw.js');
       const files = ['/', ...pub.map((f) => `/${f}`), ...built.map((f) => `/${f}`)];
@@ -34,32 +38,30 @@ const CACHE = 'still-${version}';
 const FILES = ${JSON.stringify(files)};
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache, so this version never stores an older page.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: 'reload' }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
+// Older versions are removed a little after this one takes over, not at once: a page that
+// loaded the old index a moment ago can still fetch the old files it names. If the worker
+// stops before then, the next activation clears them.
+const dropOld = () => caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))));
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim()),
-  );
+  e.waitUntil(self.clients.claim());
+  setTimeout(dropOld, 30000);
 });
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  // The page itself: straight from the cache (instant, works offline), refreshed in the background.
+  // The page itself comes from this version's own cache, so it always matches the files cached
+  // with it. A new deploy arrives as a new worker, and shows from the next launch.
   if (req.mode === 'navigate') {
-    e.respondWith(
-      caches.match('/', { ignoreSearch: true }).then((hit) => {
-        const fresh = fetch('/').then((r) => {
-          if (r.ok) caches.open(CACHE).then((c) => c.put('/', r.clone()));
-          return r;
-        });
-        e.waitUntil(fresh.catch(() => {}));
-        return hit || fresh;
-      }),
-    );
+    e.respondWith(caches.open(CACHE).then((c) => c.match('/')).then((hit) => hit || fetch(req)));
     return;
   }
   e.respondWith(caches.match(req).then((hit) => hit || fetch(req)));

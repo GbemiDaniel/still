@@ -43,6 +43,7 @@ export function createSound() {
   let speed = 0;
   let acc = 0;
   let offTimer = 0;
+  let guided = false;
 
   function build(): Graph | null {
     const a = startAudio();
@@ -88,6 +89,8 @@ export function createSound() {
 
   return {
     get on() { return on; },
+    /** A guided session: the tone rises and falls clearly with each breath. */
+    setGuided(g: boolean) { guided = g; },
     /** Call inside the tap that switches sound on. Returns false if audio is not available. */
     enable(): boolean {
       g ??= build();
@@ -125,14 +128,16 @@ export function createSound() {
       speed += ((breath - prev) / dt - speed) * 0.25;
       prev = breath;
       const t = a.ctx.currentTime;
-      g.pad.gain.setTargetAtTime(0.045 + 0.1 * breath, t, 0.2);
+      g.pad.gain.setTargetAtTime(guided ? 0.05 + 0.12 * breath : 0.045 + 0.1 * breath, t, 0.2);
       g.lowpass.frequency.setTargetAtTime(240 + 1150 * breath, t, 0.2);
       g.airBand.frequency.setTargetAtTime(450 + 1100 * breath, t, 0.2);
       // Air moves with the breath: a little more on the way in, a softer one on the way out.
       const air = speed > 0 ? Math.min(1, speed * 1.6) * 0.03 : Math.min(1, -speed * 1.6) * 0.018;
       g.airGain.gain.setTargetAtTime(air, t, 0.2);
-      // A slight lift in pitch as the light rises.
-      for (const o of g.oscs) o.detune.setTargetAtTime(breath * 45, t, 0.3);
+      // Pitch rises with the light. In a guided session the rise is wide enough (a little over
+      // a whole tone) to follow with eyes closed; free breathing keeps it a slight lift.
+      const lift = guided ? 260 : 45;
+      for (const o of g.oscs) o.detune.setTargetAtTime(breath * lift, t, guided ? 0.15 : 0.3);
     },
     /** Pause the hardware while the page is hidden; call with document.hidden. */
     hidden(h: boolean) {

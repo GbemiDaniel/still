@@ -1,8 +1,8 @@
 # Still
 
-One warm light that breathes with you. A small, quiet tool for slowing down for a minute: a free mode, a guided breath with a longer breath out than in, and a breath timer. It works offline, installs to the home screen, and keeps nothing.
+One warm light that breathes with you. A small, quiet tool for slowing down for a minute: a free mode, a guided breath that adapts to your own pace, and a breath timer. It works offline, installs to the home screen, and keeps only your preferred pace, on your device.
 
-Still is a breathing guide, not medical advice. If you feel unwell, stop and seek help from a qualified professional.
+Still is a breathing guide, not medical advice. If you feel unwell, stop and seek help from a qualified professional. If you feel dizzy or uncomfortable, stop and breathe normally.
 
 ## Case study
 
@@ -15,7 +15,10 @@ That person shapes everything below: one light, very few words, big targets for 
 ### What it is
 
 - **Free.** Press and hold anywhere to breathe in, let go to breathe out. The light swells and settles with a soft spring. Left alone, it breathes by itself.
-- **Guided.** The light follows a fixed pace. Three paces, all with a longer breath out than in (4 in and 6 out, 5 and 7, 4 and 8), and sessions of one, three or five minutes. It ends with a slow fade and one quiet line.
+- **Guided.** The light follows your pace: breathe in, an optional hold, breathe out and rest, each set in half-second steps. Three presets (gentle, balanced, longer out) are only starting points. Sessions of one, three or five minutes end with a slow fade and one quiet line.
+- **Find my pace.** Before a session you can breathe naturally a few times, holding to breathe in and letting go to breathe out. Still times your own in and out and suggests a starting pace a little slower, with a slightly longer out-breath.
+- **Ease-in.** A session starts at your natural rhythm and moves towards your pace a step each breath. If you hold along and seem to struggle, or stop holding along, it stays where it is instead of pushing on. Slower and faster buttons change the pace from the next breath, never in the middle of one.
+- **Eyes closed.** With sound on, a soft tone rises as you breathe in and falls as you breathe out. With vibration on (where the phone supports it), a light pulse marks each turn of the breath.
 - **Timer.** Shows how long you breathed in, held, and breathed out, in seconds. No score, no grade, no label. Then it forgets.
 
 ### Decisions
@@ -26,11 +29,13 @@ That person shapes everything below: one light, very few words, big targets for 
 
 **Calm motion is its own finished version.** For people who prefer reduced motion, the light moves in a narrower range, the haze is slower, grain holds still, and nothing overshoots. The pace of a guided breath stays the same, because the pace is the point. It was designed to look complete, not stripped back.
 
-**The wording makes no promises.** Nothing says the tool treats, cures, lowers or improves anything. It says what it does: it moves with you at a pace you choose. A short line on screen says it is not medical advice and to seek help if you feel unwell. All wording and paces live in one file (`src/content.ts`) so they are easy to change.
+**The wording makes no promises.** Nothing says the tool treats, cures, lowers or improves anything. It says what it does: it moves with you at a pace you choose. A short line on screen says it is not medical advice and to seek help if you feel unwell, and in guided mode another says to stop and breathe normally if you feel dizzy or uncomfortable. All wording and presets live in one file (`src/content.ts`) so they are easy to change.
 
 **Sound is a choice, never a surprise.** It starts switched off, every time, and the audio system is not even created until you tap the switch. It is synthesised on the spot: a soft open fifth that brightens as the light rises, and a little air that moves with the breath. No files.
 
-**Nothing is stored or sent.** No accounts, no analytics, no saved settings, no history. The page's security policy only allows its own files, so this is enforced, not just promised. The service worker only caches Still's own files for offline use. The keep-awake option uses the screen wake lock during a session and is released when it ends.
+**People differ, so the pace adapts.** A fixed pace suits some people and strains others. Timing someone's own breath first, starting there, and easing towards a slightly slower pace means nobody begins already out of breath. The tool watches for signs it is asking too much (letting go long before the in-breath ends, pressing again early in the out-breath) and holds steady rather than pushing. Holds are optional, capped at four seconds and never suggested: no preset holds, and no wording encourages longer holds.
+
+**Only the pace is kept, and only on your device.** No accounts, no analytics, no history. The preferred pace sits in the browser's local storage on that device and can be removed with "forget my pace". The page's security policy only allows its own files, so this is enforced, not just promised. The service worker only caches Still's own files for offline use. The keep-awake option uses the screen wake lock during a session and is released when it ends.
 
 **Touch first.** Every control is at least 48 px, usually 52 to 56. Text is warm off-white on near-black, well past readable contrast. Hold-anywhere ignores taps on buttons, so the controls and the breath never fight.
 

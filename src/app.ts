@@ -1,25 +1,37 @@
 /**
  * The interface and its flow: three modes (free, guided, timer), each with a few scenes.
- * It owns the line of text, the controls and the options sheet, and tells the breath what
- * to do. Everything it shows comes from content.ts. Nothing is stored or sent.
+ * It owns the line of text, the controls and the sheets, and tells the breath what to do.
+ * Everything it shows comes from content.ts. The only thing kept is the preferred pace, on
+ * this device (store.ts). Nothing is sent anywhere.
  */
-import { PACES, LENGTHS, DEFAULT_PACE, DEFAULT_LENGTH, COPY } from './content';
-import { createGuide, type Guide } from './guide';
+import { PRESETS, LENGTHS, DEFAULT_LENGTH, COPY } from './content';
+import { guessNatural, samePace, suggestPace, clampPace, half, PACE_KEYS, type Pace } from './pace';
+import { loadSaved, savePace, forgetSaved } from './store';
+import { createGuide, type Guide, type GuidePhase } from './guide';
+import { createFinder, type Finder } from './find';
+import { createPaceEditor } from './paceEditor';
 import { createTimer, type TimerResult } from './timer';
 import { keepAwake, wakeSupported } from './wake';
 import { audioSupported } from './engine/audio';
+import { vibrate } from './engine/haptics';
 import type { Breath, BreathMode } from './breath';
 import type { Sound } from './sound';
 
 type View = 'free' | 'guided' | 'timer';
 type Scene =
   | 'free'
-  | 'guided-setup' | 'guided-run' | 'guided-end'
+  | 'guided-setup' | 'guided-find' | 'guided-found' | 'guided-run' | 'guided-end'
   | 'timer-setup' | 'timer-in' | 'timer-hold' | 'timer-out' | 'timer-result';
 
 interface Action { label: string; run: () => void; kind?: 'primary' | 'quiet' }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const canVibrate = 'vibrate' in navigator;
+// Short phases (half a second of hold, say) would only flicker the line, so it keeps the last word.
+const MIN_WORD_S = 1.5;
+// Taps on buttons and sheets are for the interface, not for following the breath.
+const isUi = (t: EventTarget | null) =>
+  t instanceof Element && !!t.closest('button, a, input, [role="switch"], [data-ui]');
 
 export function createApp(opts: {
   breath: Breath;
@@ -41,20 +53,28 @@ export function createApp(opts: {
   const tabs = $('tabs');
   const actions = $('actions');
   const gear = $('gear');
-  const sheet = $('sheet');
   const panes = [...document.querySelectorAll<HTMLElement>('.pane')];
 
+  // The preferred pace, from this device if it was saved here before.
+  const saved = loadSaved();
+  let pace: Pace = saved?.pace ?? { ...PRESETS[0].pace };
+  let natural: { inS: number; outS: number } | null = saved?.natural ?? null;
+  let lengthIdx = saved && LENGTHS[saved.lengthIdx] ? saved.lengthIdx : DEFAULT_LENGTH;
+  let hasSaved = !!saved;
+  let suggestion: Pace | null = null;
+
   let scene: Scene = 'free';
-  let paceIdx = DEFAULT_PACE;
-  let lengthIdx = DEFAULT_LENGTH;
   let guide: Guide | null = null;
-  let guidePhase = '';
+  let guidePhase: GuidePhase | '' = '';
+  let finder: Finder | null = null;
   const timer = createTimer();
   let awake = wakeSupported;
+  let vibe = false;
   let sessionActive = false;
   let dim = 1;
   let dimTarget = 1;
   let lineTimer = 0;
+  let hintTimer = 0;
   let hintReady = false;
   let lastCount = '';
   let lastProgress = -1;
@@ -77,25 +97,47 @@ export function createApp(opts: {
   const sayLater = (text: string, ms: number) => { lineTimer = window.setTimeout(() => say(text), ms); };
   const announce = (text: string) => { status.textContent = text; };
 
-  // ---- Static copy ----
+  // ---- The hint: one quiet line under the line ----
   const touch = matchMedia('(pointer: coarse)').matches;
-  hint.textContent = touch ? COPY.free.hintTouch : COPY.free.hintKey;
-  $('notice').textContent = COPY.noticeShort;
-  $('notice-long').textContent = COPY.noticeLong;
+  function showHint(text: string | null, ms = 0) {
+    clearTimeout(hintTimer);
+    if (!text) { hint.classList.remove('on'); return; }
+    hint.textContent = text;
+    hint.classList.add('on');
+    if (ms) hintTimer = window.setTimeout(() => hint.classList.remove('on'), ms);
+  }
+
+  // ---- Static copy ----
+  const notice = $('notice');
+  const dizzy = document.createElement('span');
+  dizzy.className = 'dizzy';
+  dizzy.textContent = COPY.dizzy;
+  const short = document.createElement('span');
+  short.textContent = COPY.noticeShort;
+  notice.append(dizzy, short);
+  $('notice-long').textContent = `${COPY.noticeLong} ${COPY.dizzy}`;
   $('privacy').textContent = COPY.privacy;
   $('sheet-title').textContent = COPY.options.title;
   gear.setAttribute('aria-label', COPY.options.open);
   $('begin-guided').textContent = COPY.guided.begin;
+  $('find-pace').textContent = COPY.pace.find;
   $('begin-timer').textContent = COPY.timer.begin;
   $('timer-note').textContent = COPY.timer.note;
   $('sheet-close').textContent = COPY.options.close;
+  $('forget').textContent = COPY.options.forget;
+  $('pace-open').setAttribute('aria-label', COPY.pace.open);
   const soundSw = $('sw-sound');
+  const vibeSw = $('sw-vibe');
   const awakeSw = $('sw-awake');
-  soundSw.querySelector('b')!.textContent = COPY.options.sound;
-  soundSw.querySelector('i')!.textContent = COPY.options.soundNote;
-  awakeSw.querySelector('b')!.textContent = COPY.options.awake;
-  awakeSw.querySelector('i')!.textContent = COPY.options.awakeNote;
+  const label = (el: HTMLElement, b: string, i: string) => {
+    el.querySelector('b')!.textContent = b;
+    el.querySelector('i')!.textContent = i;
+  };
+  label(soundSw, COPY.options.sound, COPY.options.soundNote);
+  label(vibeSw, COPY.options.vibe, COPY.options.vibeNote);
+  label(awakeSw, COPY.options.awake, COPY.options.awakeNote);
   if (!audioSupported) soundSw.hidden = true;
+  if (!canVibrate) vibeSw.hidden = true;
   if (!wakeSupported) awakeSw.hidden = true;
 
   // ---- Tabs ----
@@ -109,36 +151,96 @@ export function createApp(opts: {
   });
 
   // ---- Guided setup: pace and length ----
-  const paceBox = $('paces');
-  const lengthBox = $('lengths');
-  const paceChips = PACES.map((p, i) => {
+  const lengthChips = LENGTHS.map((v, i) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'chip';
-    b.innerHTML = `<span></span><small></small>`;
-    b.firstElementChild!.textContent = p.name;
-    b.lastElementChild!.textContent = COPY.guided.paceDetail(p);
-    b.addEventListener('click', () => { paceIdx = i; paintChips(); });
-    paceBox.appendChild(b);
+    b.textContent = COPY.guided.length(v);
+    b.addEventListener('click', () => {
+      lengthIdx = i;
+      paintSetup();
+      if (hasSaved) remember();
+    });
+    $('lengths').appendChild(b);
     return b;
   });
-  const lengthChips = LENGTHS.map((s, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'chip';
-    b.textContent = COPY.guided.length(s);
-    b.addEventListener('click', () => { lengthIdx = i; paintChips(); });
-    lengthBox.appendChild(b);
-    return b;
-  });
-  function paintChips() {
-    paceChips.forEach((b, i) => b.setAttribute('aria-pressed', String(i === paceIdx)));
+  function paintSetup() {
+    const preset = PRESETS.find((p) => samePace(p.pace, pace));
+    $('pace-open').querySelector('.name')!.textContent = preset ? preset.name : COPY.pace.yours;
+    $('pace-open').querySelector('.detail')!.textContent = COPY.pace.summary(pace);
     lengthChips.forEach((b, i) => b.setAttribute('aria-pressed', String(i === lengthIdx)));
+    $('forget').hidden = !hasSaved;
   }
-  paintChips();
+  function remember() {
+    savePace({ pace, natural, lengthIdx });
+    hasSaved = true;
+    paintSetup();
+  }
+  paintSetup();
 
   $('begin-guided').addEventListener('click', () => go('guided-run'));
+  $('find-pace').addEventListener('click', () => go('guided-find'));
   $('begin-timer').addEventListener('click', () => go('timer-in'));
+
+  // ---- Sheets: options and pace ----
+  const anyOpen = () => document.querySelector('.sheet.open');
+  function makeSheet(el: HTMLElement, focusEl: HTMLElement) {
+    let opener: HTMLElement | null = null;
+    const api = {
+      open() {
+        opener = document.activeElement as HTMLElement | null;
+        el.inert = false;
+        el.classList.add('open');
+        ui.inert = true;
+        focusEl.focus({ preventScroll: true });
+      },
+      close() {
+        if (!el.classList.contains('open')) return;
+        el.classList.remove('open');
+        el.inert = true;
+        ui.inert = false;
+        (opener ?? gear).focus({ preventScroll: true });
+      },
+    };
+    el.addEventListener('click', (e) => { if (e.target === el) api.close(); });
+    return api;
+  }
+  const options = makeSheet($('sheet'), $('sheet-close'));
+  const paceSheet = makeSheet($('pace-sheet'), $('pace-done'));
+  gear.addEventListener('click', () => {
+    gear.setAttribute('aria-expanded', 'true');
+    options.open();
+  });
+  $('sheet-close').addEventListener('click', () => { options.close(); gear.setAttribute('aria-expanded', 'false'); });
+  addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !anyOpen()) return;
+    options.close();
+    paceSheet.close();
+    gear.setAttribute('aria-expanded', 'false');
+  });
+
+  const editor = createPaceEditor((p) => {
+    pace = p;
+    paintSetup();
+  });
+  $('pace-open').addEventListener('click', () => {
+    editor.load(pace);
+    paceSheet.open();
+  });
+  // Closing the editor keeps the pace on this device, as the preferred one.
+  $('pace-done').addEventListener('click', () => { remember(); paceSheet.close(); });
+  $('pace-find').addEventListener('click', () => { paceSheet.close(); go('guided-find'); });
+
+  $('forget').addEventListener('click', () => {
+    forgetSaved();
+    hasSaved = false;
+    pace = { ...PRESETS[0].pace };
+    natural = null;
+    lengthIdx = DEFAULT_LENGTH;
+    paintSetup();
+    announce(COPY.options.forgotten);
+    $('sheet-close').focus({ preventScroll: true });
+  });
 
   // ---- Actions row (shown while a session runs, and at its end) ----
   function setActions(list: Action[]) {
@@ -169,6 +271,7 @@ export function createApp(opts: {
   // ---- Scenes ----
   function go(next: Scene) {
     const view = next.split('-')[0] as View;
+    const was = scene;
     scene = next;
     ui.dataset.scene = next;
 
@@ -183,11 +286,13 @@ export function createApp(opts: {
     tabs.inert = !showTabs;
     tabButtons.forEach((b, i) => b.setAttribute('aria-current', String(['free', 'guided', 'timer'][i] === view)));
 
-    hint.classList.toggle('on', next === 'free' && hintReady && !breath.holds);
+    showHint(next === 'free' && hintReady && !breath.holds ? (touch ? COPY.free.hintTouch : COPY.free.hintKey) : null);
     progress.classList.toggle('on', next === 'guided-run');
-    count.classList.toggle('on', next === 'timer-in' || next === 'timer-hold' || next === 'timer-out');
+    count.classList.toggle('on', next === 'guided-find' || next === 'timer-in' || next === 'timer-hold' || next === 'timer-out');
     dimTarget = next === 'guided-end' ? 0.3 : 1;
+    sound.setGuided(next === 'guided-run');
     sound.fadeTo(next === 'guided-end' ? 0.35 : 1, next === 'guided-end' ? 6 : 1.5);
+    if (was === 'guided-find' && next !== 'guided-found') finder = null;
 
     switch (next) {
       case 'free':
@@ -202,27 +307,77 @@ export function createApp(opts: {
       case 'guided-setup':
         session(false);
         leaveManual();
+        paintSetup();
         say('');
         setActions([]);
         break;
 
+      // Hold to breathe in, let go to breathe out, a few times, at their own pace.
+      case 'guided-find':
+        session(false);
+        breath.drive(null);
+        breath.enabled = true;
+        finder = createFinder();
+        paintDots();
+        say(COPY.find.line);
+        showHint(COPY.find.hint);
+        setActions([{ label: COPY.find.cancel, kind: 'quiet', run: () => go('guided-setup') }]);
+        announce(COPY.find.started);
+        break;
+
+      case 'guided-found': {
+        leaveManual();
+        const r = finder!.result();
+        finder = null;
+        suggestion = suggestPace(r.inS, r.outS);
+        natural = { inS: half(r.inS), outS: half(r.outS) };
+        $('found-note').textContent = COPY.find.natural(natural.inS, natural.outS);
+        const L = COPY.find.labels;
+        const cell = (lab: string, v: number) => `<div><dt>${lab}</dt><dd>${v}<small>s</small></dd></div>`;
+        $('found').innerHTML = cell(L.in, suggestion.inS) + cell(L.out, suggestion.outS) + cell(L.rest, suggestion.restS);
+        say(COPY.find.found);
+        setActions([
+          { label: COPY.find.again, run: () => go('guided-find') },
+          { label: COPY.find.use, kind: 'primary', run: () => { pace = suggestion!; remember(); go('guided-setup'); } },
+        ]);
+        announce(`${COPY.find.natural(natural.inS, natural.outS)} ${COPY.pace.summary(suggestion)} seconds.`);
+        break;
+      }
+
       case 'guided-run': {
-        const pace = PACES[paceIdx];
         const len = LENGTHS[lengthIdx];
         leaveManual();
-        guide = createGuide(pace, len);
+        // Start from their own measured rhythm if they found it, else a little quicker than the pace.
+        const start: Pace = natural
+          ? clampPace({ inS: natural.inS, holdS: 0, outS: natural.outS, restS: Math.min(0.5, pace.restS) })
+          : guessNatural(pace);
+        guide = createGuide({ target: pace, natural: start, lengthS: len });
         guidePhase = '';
         lastProgress = -1;
         session(true);
         say(COPY.guided.settle);
-        setActions([{ label: COPY.guided.end, kind: 'quiet', run: () => go('guided-end') }]);
+        showHint(COPY.guided.settleHint);
+        setActions([
+          { label: COPY.guided.slower, kind: 'quiet', run: () => { guide?.slower(); note(COPY.guided.slowerNote); } },
+          { label: COPY.guided.end, kind: 'quiet', run: () => go('guided-end') },
+          { label: COPY.guided.faster, kind: 'quiet', run: () => { guide?.faster(); note(COPY.guided.fasterNote); } },
+        ]);
         announce(COPY.guided.started(pace, len));
         break;
       }
 
       case 'guided-end':
         session(false);
+        // If they settled on slower or faster, that becomes their preferred pace.
+        if (guide && Math.abs(guide.factor - 1) > 0.01) {
+          const f = guide.factor;
+          const scaled = { ...pace };
+          for (const k of PACE_KEYS) scaled[k] = pace[k] * f;
+          pace = clampPace(scaled);
+          remember();
+        }
         guide = null;
+        followers.clear();
         breath.drive(null);
         say('');
         sayLater(COPY.guided.closing, 1800);
@@ -289,6 +444,12 @@ export function createApp(opts: {
     }
   }
 
+  // A quiet confirmation under the line that never touches the breath itself.
+  function note(text: string) {
+    showHint(text, 2600);
+    announce(text);
+  }
+
   // Guided and timer modes take the breath off the pointer; a held breath is let go first.
   function leaveManual() {
     breath.enabled = false;
@@ -303,44 +464,51 @@ export function createApp(opts: {
 
   function showResult(r: TimerResult) {
     const L = COPY.timer.labels;
-    const cell = (label: string, s: number, skipped = false) =>
-      `<div><dt>${label}</dt><dd>${skipped ? '-' : `${s.toFixed(1)}<small>s</small>`}</dd></div>`;
+    const cell = (lab: string, v: number, skipped = false) =>
+      `<div><dt>${lab}</dt><dd>${skipped ? '-' : `${v.toFixed(1)}<small>s</small>`}</dd></div>`;
     $('result').innerHTML = cell(L.in, r.in) + cell(L.hold, r.hold, r.hold === 0) + cell(L.out, r.out);
     announce(
       `${L.in} ${r.in.toFixed(1)} seconds. ${r.hold ? `${L.hold} ${r.hold.toFixed(1)} seconds. ` : ''}${L.out} ${r.out.toFixed(1)} seconds.`,
     );
   }
 
-  // ---- Free mode follows the breath controller ----
+  function paintDots() {
+    if (!finder) return;
+    const n = finder.needed;
+    count.textContent = Array.from({ length: n }, (_, i) => (i < finder!.count ? '●' : '○')).join('  ');
+  }
+
+  // ---- The breath controller drives free mode and "find my pace" ----
   breath.onChange((mode: BreathMode) => {
-    if (scene !== 'free') return;
-    say(COPY.free[mode]);
-    // The hint has done its job after the first hold.
-    if (mode === 'in') hint.classList.remove('on');
+    if (scene === 'free') {
+      say(COPY.free[mode]);
+      // The hint has done its job after the first hold.
+      if (mode === 'in') showHint(null);
+      return;
+    }
+    if (scene === 'guided-find' && finder) {
+      if (mode === 'in') finder.press();
+      else if (mode === 'out') finder.release();
+      paintDots();
+      if (finder.done) go('guided-found');
+    }
   });
 
-  // ---- Options sheet ----
-  let opener: HTMLElement | null = null;
-  function openSheet() {
-    opener = document.activeElement as HTMLElement | null;
-    sheet.inert = false;
-    sheet.classList.add('open');
-    gear.setAttribute('aria-expanded', 'true');
-    ui.inert = true;
-    $('sheet-close').focus({ preventScroll: true });
-  }
-  function closeSheet() {
-    sheet.classList.remove('open');
-    sheet.inert = true;
-    ui.inert = false;
-    gear.setAttribute('aria-expanded', 'false');
-    (opener ?? gear).focus({ preventScroll: true });
-  }
-  gear.addEventListener('click', openSheet);
-  $('sheet-close').addEventListener('click', closeSheet);
-  sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); });
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet(); });
+  // ---- Holding along during a guided session: it only informs the pace, never the light ----
+  const followers = new Set<number>();
+  addEventListener('pointerdown', (e) => {
+    if (scene !== 'guided-run' || !guide || isUi(e.target)) return;
+    if (!followers.size) guide.press();
+    followers.add(e.pointerId);
+  });
+  const up = (e: PointerEvent) => {
+    if (!followers.delete(e.pointerId) || followers.size) return;
+    guide?.release();
+  };
+  addEventListener('pointerup', up);
+  addEventListener('pointercancel', up);
 
+  // ---- Options ----
   // Sound starts only from this tap, and starts off every time the page loads.
   soundSw.addEventListener('click', () => {
     if (sound.on) {
@@ -349,6 +517,11 @@ export function createApp(opts: {
       return;
     }
     soundSw.setAttribute('aria-checked', String(sound.on));
+  });
+  vibeSw.addEventListener('click', () => {
+    vibe = !vibe;
+    vibeSw.setAttribute('aria-checked', String(vibe));
+    if (vibe) vibrate(16);
   });
   awakeSw.addEventListener('click', () => {
     awake = !awake;
@@ -365,6 +538,10 @@ export function createApp(opts: {
     }
   });
 
+  const PHASE_WORDS: Partial<Record<GuidePhase, string>> = {
+    in: COPY.guided.in, hold: COPY.guided.hold, out: COPY.guided.out, rest: COPY.guided.rest,
+  };
+
   go('free');
 
   return {
@@ -375,7 +552,7 @@ export function createApp(opts: {
       setTimeout(() => ui.classList.add('on'), calm ? 1400 : 2200);
       setTimeout(() => {
         hintReady = true;
-        if (scene === 'free' && !breath.holds) hint.classList.add('on');
+        if (scene === 'free' && !breath.holds) showHint(touch ? COPY.free.hintTouch : COPY.free.hintKey);
       }, calm ? 2600 : 4200);
     },
     /** True while a timed session runs. */
@@ -389,12 +566,20 @@ export function createApp(opts: {
         const s = guide.update(Math.min(rawDt, 250));
         breath.drive(s.value);
         if (s.phase !== guidePhase) {
+          const first = guidePhase === 'settle';
           guidePhase = s.phase;
-          if (s.phase === 'in') say(COPY.guided.in);
-          else if (s.phase === 'out') say(COPY.guided.out);
-          else if (s.phase === 'done') go('guided-end');
+          if (s.phase === 'done') {
+            go('guided-end');
+          } else {
+            const word = PHASE_WORDS[s.phase];
+            if (word && guide.phaseLength >= MIN_WORD_S) say(word);
+            if (first) showHint(null);
+            // With eyes closed: a light pulse as the breath turns in, a double one as it turns out.
+            if (vibe && s.phase === 'in') vibrate(16);
+            else if (vibe && s.phase === 'out') vibrate([10, 70, 10]);
+          }
         }
-        if (s.progress - lastProgress > 0.002) {
+        if (guide && s.progress - lastProgress > 0.002) {
           lastProgress = s.progress;
           progressBar.style.transform = `scaleX(${s.progress.toFixed(4)})`;
         }
