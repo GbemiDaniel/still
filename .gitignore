@@ -25,3 +25,6 @@ dist-ssr
 
 # Browser QA artifacts
 .playwright-mcp
+
+.vercel
+.env*

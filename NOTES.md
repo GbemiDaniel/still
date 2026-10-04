@@ -1,6 +1,6 @@
 # Notes
 
-Status: Step 4 built plus the timer readability fix (the live breath timer now has its own band at the top). Not yet tested on a real phone. Not deployed: no Vercel project is linked yet (see Next).
+Status: Step 4 built plus the timer readability fix. Hosted on Vercel: project dees-projects-f5127dce/still, linked to GbemiDaniel/still, so every push to main deploys to production. Not yet tested on a real phone.
 
 ## What exists
 - `src/haze.frag`: pass 1, slow warped fbm haze rendered into a small offscreen buffer.
@@ -98,7 +98,7 @@ Status: Step 4 built plus the timer readability fix (the live breath timer now h
 - The governor only steps up when the average is under 12 ms for 6 s, which a 60 Hz vsynced display never reports. Once it steps down it stays down. Still open: a safe step-up rule (for example, try one level up after 10 s at a steady 16.7 ms median, and step back with a longer hold-off if it slips).
 - Confirm the calibration fix on a real mid-range phone: read the [quality] line with ?debug.
 - Confirm on a phone that the grain layer stays crisp at fractional pixel ratios (2.625, 2.75), where a whole-device-pixel move is a fractional CSS move.
-- Link a Vercel project to GbemiDaniel/still so pushes to main deploy, then confirm the URL. Still not linked as of step 2: the claude.ai Vercel connector can list projects but gets 403 on the dees-projects scope, and the Vercel CLI is not installed. Fix: import the repo at vercel.com/new (Vite preset, no settings needed), or re-authorize the connector for that team.
+- Vercel: linked on 2026-10-04 with the Vercel CLI (the claude.ai connector still gets 403 on the dees-projects scope, so it cannot be used for this team until it is re-authorized). Framework detected as Vite (build: vite build, output: dist). vercel.json carries the security headers and the sw.js no-cache rule. The CLI login lives on this machine only; .vercel and .env* are git-ignored.
 - Test step 2 on a real phone: the haptic tick (Android vibrate, iOS 18+ switch trick), long-press behaviour, thumb hold through a full breath, and how the spring feels in the hand.
 - The governor settles at level 2 or 3 on the throttled profile and never steps back up (see the first item). Worth fixing before step 3 so a phone that warms up recovers quality.
 - Step 3: sound that follows the breath behind a toggle (src/engine/audio.ts is ready), final typography, performance check, case study draft in README.md.
