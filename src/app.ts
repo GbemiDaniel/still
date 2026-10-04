@@ -47,6 +47,8 @@ export function createApp(opts: {
   const spans = [...line.querySelectorAll('span')];
   const hint = $('hint');
   const count = $('count');
+  const countFace = $('count-face');
+  const countText = $('count-text');
   const progress = $('progress');
   const progressBar = progress.firstElementChild as HTMLElement;
   const status = $('status');
@@ -77,6 +79,7 @@ export function createApp(opts: {
   let hintTimer = 0;
   let hintReady = false;
   let lastCount = '';
+  let lastSpoken = -1;
   let lastProgress = -1;
 
   // ---- The line: two spans cross-fading in one cell ----
@@ -400,6 +403,7 @@ export function createApp(opts: {
         session(true);
         timer.begin();
         lastCount = '';
+        lastSpoken = -1;
         breath.press();
         say(COPY.timer.in);
         setActions([
@@ -475,7 +479,9 @@ export function createApp(opts: {
   function paintDots() {
     if (!finder) return;
     const n = finder.needed;
-    count.textContent = Array.from({ length: n }, (_, i) => (i < finder!.count ? '●' : '○')).join('  ');
+    countFace.className = 'dots';
+    countFace.textContent = Array.from({ length: n }, (_, i) => (i < finder!.count ? '●' : '○')).join('');
+    countText.textContent = COPY.find.progress(finder.count, n);
   }
 
   // ---- The breath controller drives free mode and "find my pace" ----
@@ -585,10 +591,20 @@ export function createApp(opts: {
         }
       }
       if (scene === 'timer-in' || scene === 'timer-hold' || scene === 'timer-out') {
-        const t = timer.elapsed.toFixed(1);
+        const e = timer.elapsed;
+        const t = e.toFixed(1);
         if (t !== lastCount) {
           lastCount = t;
-          count.innerHTML = `${t}<small>s</small>`;
+          // Padded with figure spaces (as wide as a digit) so the readout never shifts, up to 99.9 s.
+          countFace.className = '';
+          countFace.innerHTML = `${t.padStart(4, ' ')}<small>s</small>`;
+        }
+        // The text a screen reader finds, refreshed once a second rather than ten times.
+        const whole = Math.floor(e);
+        if (whole !== lastSpoken) {
+          lastSpoken = whole;
+          const word = scene === 'timer-in' ? COPY.timer.in : scene === 'timer-hold' ? COPY.timer.holding : COPY.timer.out;
+          countText.textContent = COPY.timer.spoken(word, whole);
         }
       }
       // Soft fade out at the end of a guided session, and back when it is left.
