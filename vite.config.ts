@@ -2,12 +2,13 @@ import { defineConfig, type Plugin } from 'vite';
 import { createHash } from 'node:crypto';
 import { readdirSync } from 'node:fs';
 
-// Still talks to nobody: no fonts, scripts or requests leave its own origin. The same
+// Still talks to nobody but its own origin, except the feedback form, which may post to
+// Web3Forms when someone chooses to send a message. The same
 // policy goes out from vercel.json, and from `vite preview` so it can be tested here.
 const HEADERS = {
   'Content-Security-Policy':
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-    "font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; " +
+    "font-src 'self'; connect-src 'self' https://api.web3forms.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; " +
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',

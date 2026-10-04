@@ -6,7 +6,9 @@
  */
 import { PRESETS, LENGTHS, DEFAULT_LENGTH, COPY } from './content';
 import { guessNatural, samePace, suggestPace, clampPace, half, PACE_KEYS, type Pace } from './pace';
-import { loadSaved, savePace, forgetSaved } from './store';
+import { loadSaved, savePace, forgetSaved, seenWelcome, markWelcome } from './store';
+import { createWelcome } from './welcome';
+import { createFeedback } from './feedback';
 import { createGuide, type Guide, type GuidePhase } from './guide';
 import { createFinder, type Finder } from './find';
 import { createPaceEditor } from './paceEditor';
@@ -185,17 +187,17 @@ export function createApp(opts: {
   $('find-pace').addEventListener('click', () => go('guided-find'));
   $('begin-timer').addEventListener('click', () => go('timer-in'));
 
-  // ---- Sheets: options and pace ----
+  // ---- Sheets: options, pace, welcome, feedback ----
   const anyOpen = () => document.querySelector('.sheet.open');
   function makeSheet(el: HTMLElement, focusEl: HTMLElement) {
     let opener: HTMLElement | null = null;
     const api = {
-      open() {
+      open(focus: HTMLElement = focusEl) {
         opener = document.activeElement as HTMLElement | null;
         el.inert = false;
         el.classList.add('open');
         ui.inert = true;
-        focusEl.focus({ preventScroll: true });
+        focus.focus({ preventScroll: true });
       },
       close() {
         if (!el.classList.contains('open')) return;
@@ -210,17 +212,50 @@ export function createApp(opts: {
   }
   const options = makeSheet($('sheet'), $('sheet-close'));
   const paceSheet = makeSheet($('pace-sheet'), $('pace-done'));
+  const welcomeSheet = makeSheet($('welcome'), $('welcome-skip'));
+  const feedbackSheet = makeSheet($('feedback-sheet'), $('feedback-close'));
   gear.addEventListener('click', () => {
+    paintFeedbackRow();
     gear.setAttribute('aria-expanded', 'true');
     options.open();
   });
   $('sheet-close').addEventListener('click', () => { options.close(); gear.setAttribute('aria-expanded', 'false'); });
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !anyOpen()) return;
-    options.close();
-    paceSheet.close();
+    for (const s of [options, paceSheet, welcomeSheet, feedbackSheet]) s.close();
     gear.setAttribute('aria-expanded', 'false');
   });
+
+  // ---- Welcome: first visit only, and again from "about" at any time. Never a gate. ----
+  const welcome = createWelcome({
+    open: (focus) => welcomeSheet.open(focus),
+    close: () => welcomeSheet.close(),
+    onStart: () => {
+      if (scene !== 'free') go('free');
+      hintReady = true;
+      if (!breath.holds) showHint(touch ? COPY.free.hintTouch : COPY.free.hintKey);
+    },
+  });
+  const about = $('about');
+  about.textContent = COPY.welcome.about;
+  about.setAttribute('aria-label', COPY.welcome.aboutLabel);
+  about.addEventListener('click', () => welcome.open());
+
+  // ---- Feedback and contact: a quiet row in options, never during or right after a session ----
+  const feedback = createFeedback();
+  const fbRow = $('open-feedback');
+  label(fbRow, feedback.form ? COPY.feedback.open : COPY.feedback.contactOnly, feedback.form ? COPY.feedback.openNote : '');
+  function paintFeedbackRow() {
+    const busy = sessionActive || scene === 'guided-end' || scene === 'timer-result';
+    fbRow.hidden = !feedback.available || busy;
+  }
+  fbRow.addEventListener('click', () => {
+    options.close();
+    gear.setAttribute('aria-expanded', 'false');
+    feedback.opened();
+    feedbackSheet.open(feedback.focusTarget);
+  });
+  $('feedback-close').addEventListener('click', () => feedbackSheet.close());
 
   const editor = createPaceEditor((p) => {
     pace = p;
@@ -287,6 +322,7 @@ export function createApp(opts: {
     const showTabs = next === 'free' || next.endsWith('setup');
     tabs.classList.toggle('away', !showTabs);
     tabs.inert = !showTabs;
+    paintFeedbackRow();
     tabButtons.forEach((b, i) => b.setAttribute('aria-current', String(['free', 'guided', 'timer'][i] === view)));
 
     showHint(next === 'free' && hintReady && !breath.holds ? (touch ? COPY.free.hintTouch : COPY.free.hintKey) : null);
@@ -560,6 +596,15 @@ export function createApp(opts: {
         hintReady = true;
         if (scene === 'free' && !breath.holds) showHint(touch ? COPY.free.hintTouch : COPY.free.hintKey);
       }, calm ? 2600 : 4200);
+      // First visit: the welcome, once the light is in. Someone already holding to breathe is
+      // never interrupted; they will see it next time instead.
+      if (!seenWelcome()) {
+        setTimeout(() => {
+          if (breath.holds || breath.mode === 'in' || anyOpen() || scene !== 'free') return;
+          markWelcome();
+          welcome.open();
+        }, calm ? 1800 : 2600);
+      }
     },
     /** True while a timed session runs. */
     get active() { return sessionActive; },

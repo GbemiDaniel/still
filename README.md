@@ -1,6 +1,6 @@
 # Still
 
-One warm light that breathes with you. A small, quiet tool for slowing down for a minute: a free mode, a guided breath that adapts to your own pace, and a breath timer. It works offline, installs to the home screen, and keeps only your preferred pace, on your device.
+One warm light that breathes with you. A small, quiet tool for slowing down for a minute: a free mode, a guided breath that adapts to your own pace, and a breath timer. It works offline, installs to the home screen, keeps only your preferred pace on your device, and sends nothing unless you choose to write a message.
 
 Still is a breathing guide, not medical advice. If you feel unwell, stop and seek help from a qualified professional. If you feel dizzy or uncomfortable, stop and breathe normally.
 
@@ -35,7 +35,11 @@ That person shapes everything below: one light, very few words, big targets for 
 
 **People differ, so the pace adapts.** A fixed pace suits some people and strains others. Timing someone's own breath first, starting there, and easing towards a slightly slower pace means nobody begins already out of breath. The tool watches for signs it is asking too much (letting go long before the in-breath ends, pressing again early in the out-breath) and holds steady rather than pushing. Holds are optional, capped at four seconds and never suggested: no preset holds, and no wording encourages longer holds.
 
-**Only the pace is kept, and only on your device.** No accounts, no analytics, no history. The preferred pace sits in the browser's local storage on that device and can be removed with "forget my pace". The page's security policy only allows its own files, so this is enforced, not just promised. The service worker only caches Still's own files for offline use. The keep-awake option uses the screen wake lock during a session and is released when it ends.
+**Only the pace is kept, and only on your device.** No accounts, no analytics, no tracking cookies, no history. The preferred pace sits in the browser's local storage on that device and can be removed with "forget my pace"; the only other thing kept is a note that the welcome has been seen, so it does not come back. The page's security policy only allows its own files, plus one address for the feedback form, so this is enforced, not just promised.
+
+**A welcome that never stands in the way.** First-time visitors get three short steps: what Still is, a few moments it suits, and what it can do. "start breathing now" and "skip" are on every step, so someone who needs to breathe right now is one tap away, and someone already holding to breathe is never interrupted. It shows once; "about" brings it back.
+
+**Feedback only when asked for.** A quiet "feedback and contact" row in options opens a small form: a message, an optional email for a reply, and a plain note that nothing else is collected and that personal health details should stay out. It goes through Web3Forms to the maker's inbox. It never appears during or straight after a session, and there are no prompts or pop-ups asking for it. The service worker only caches Still's own files for offline use. The keep-awake option uses the screen wake lock during a session and is released when it ends.
 
 **Touch first.** Every control is at least 48 px, usually 52 to 56. Text is warm off-white on near-black, well past readable contrast. Hold-anywhere ignores taps on buttons, so the controls and the breath never fight.
 

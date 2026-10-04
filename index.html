@@ -44,6 +44,8 @@
           var(--bg);
       }
       .no-gl canvas { display: none; }
+      /* Author display rules (flex, grid) would otherwise beat the hidden attribute. */
+      [hidden] { display: none !important; }
       button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; touch-action: manipulation; }
       :focus-visible { outline: 2px solid var(--warm); outline-offset: 3px; }
       .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -110,6 +112,16 @@
       }
       #gear:active { color: var(--ink); }
       #gear svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; }
+      /* A quiet text link beside the options button: opens the welcome again at any time. */
+      #about {
+        position: fixed; z-index: 3;
+        top: calc(env(safe-area-inset-top) + 6px); right: calc(env(safe-area-inset-right) + 62px);
+        min-width: 52px; height: 52px; padding: 0 12px; border-radius: 26px;
+        font-family: var(--sans); font-size: 15px; letter-spacing: .1em; color: var(--ink-soft);
+        transition: color .3s, opacity 1s var(--ease);
+      }
+      #about:active { color: var(--ink); }
+      [data-scene*="-run"] #about, [data-scene="timer-in"] #about, [data-scene="timer-hold"] #about, [data-scene="timer-out"] #about,
       [data-scene*="-run"] #gear, [data-scene="timer-in"] #gear, [data-scene="timer-hold"] #gear, [data-scene="timer-out"] #gear { opacity: .55; }
 
       #bottom {
@@ -265,11 +277,73 @@
         #tabs button { min-height: 48px; }
         #notice { font-size: 12px; letter-spacing: .02em; line-height: 1.3; }
       }
+      /* ---- Welcome ---- */
+      .btn.wide { align-self: stretch; width: 100%; }
+      /* Only the step text scrolls on a very small screen: skip, start and the notice always stay in view. */
+      #welcome .card { gap: 10px; overflow: hidden; }
+      #welcome .steps { min-height: 0; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; }
+      .welcome-top { display: flex; align-items: center; justify-content: space-between; margin: -6px -8px 0 0; }
+      .wdots { display: flex; gap: 8px; padding-left: 2px; }
+      .wdots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(243, 230, 214, .3); transition: background-color .5s var(--ease); }
+      .wdots i.on { background: var(--warm); }
+      /* Steps share one cell: the card keeps the tallest step's height, so nothing jumps. */
+      .steps { display: grid; }
+      .step { grid-area: 1 / 1; opacity: 0; visibility: hidden; transition: opacity .5s var(--ease), visibility 0s .5s; }
+      .step.on { opacity: 1; visibility: visible; transition: opacity .8s var(--ease) .1s, visibility 0s; }
+      .step h2 { outline: none; }
+      .step h2:focus-visible { outline: 2px solid var(--warm); outline-offset: 4px; border-radius: 4px; }
+      .step p { font-size: 16px; line-height: 1.5; letter-spacing: .02em; color: var(--ink); margin-top: 8px; }
+      .step p + p { color: var(--ink-soft); font-size: 15px; }
+      .step ul { list-style: none; display: flex; flex-direction: column; gap: 9px; margin-top: 8px; }
+      .step li { font-size: 15px; line-height: 1.4; letter-spacing: .02em; color: var(--ink); padding-left: 16px; position: relative; }
+      .step li::before { content: ''; position: absolute; left: 2px; top: .6em; width: 5px; height: 5px; border-radius: 50%; background: rgba(255, 196, 140, .7); }
+      .step li b { font-weight: 400; color: #fbeadb; letter-spacing: .06em; margin-right: .2em; }
+      .step li b::after { content: ':'; }
+      #welcome .row { margin-top: 4px; }
+      .btn.gone { visibility: hidden; }
+      #welcome .small { border-top: 0; padding-top: 2px; text-align: center; }
+
+      /* ---- Feedback: the card sits at the top, so a phone keyboard never covers it ---- */
+      .sheet.top { align-items: flex-start; padding: calc(env(safe-area-inset-top) + 10px) 10px 10px; }
+      .sheet.top .card { border-radius: 24px; border-bottom: 1px solid var(--line-edge); padding-bottom: 18px; max-height: calc(100svh - 20px - env(safe-area-inset-top)); }
+      .sheet .small.first { border-top: 0; padding-top: 0; }
+      #feedback-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+      #feedback-form[hidden], .sheet .small[hidden] { display: none; }
+      .field { font-size: 14px; letter-spacing: .06em; color: var(--ink-soft); margin-top: 6px; }
+      #feedback-form textarea, #feedback-form input[type="email"] {
+        width: 100%; font: 16px/1.45 var(--sans); letter-spacing: .02em; color: var(--ink);
+        background: rgba(243, 230, 214, .05); border: 1px solid var(--line-edge); border-radius: 14px;
+        padding: 12px 14px; -webkit-user-select: text; user-select: text; touch-action: manipulation;
+      }
+      #feedback-form textarea { resize: none; min-height: 112px; }
+      #feedback-form input[type="email"] { min-height: 50px; }
+      #feedback-form [aria-invalid="true"] { border-color: rgba(255, 170, 140, .8); }
+      #feedback-form :focus-visible { outline: 2px solid var(--warm); outline-offset: 1px; }
+      .trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+      /* Reserved height, so a status line appearing never pushes the button down. */
+      .fb-status { min-height: 4.8em; font-size: 14px; line-height: 1.45; letter-spacing: .02em; color: var(--ink-soft); padding-top: 4px; }
+      .fb-status[data-state="ok"] { color: #cfe8c8; }
+      .fb-status[data-state="error"], .fb-status[data-state="offline"] { color: #f6d2b8; }
+      .btn:disabled { opacity: .6; cursor: default; }
+      #contact { margin-top: 10px; padding-top: 12px; border-top: 1px solid rgba(243, 230, 214, .12); }
+      #contact[hidden] { display: none; }
+      #contact h3 { font-weight: 400; font-size: 14px; letter-spacing: .1em; color: var(--ink-soft); margin-bottom: 8px; }
+      #contact ul { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+      .pill {
+        display: inline-flex; align-items: center; min-height: 48px; padding: 0 18px; border-radius: 999px;
+        border: 1px solid var(--line-edge); color: var(--ink); text-decoration: none; font-size: 15px; letter-spacing: .06em;
+      }
+      .pill:active { background: rgba(255, 170, 100, .18); }
+      #feedback-close { margin-top: 6px; }
+      .switch .chev { flex: none; width: 10px; height: 10px; margin-right: 8px; border: solid var(--ink-soft); border-width: 1.5px 1.5px 0 0; transform: rotate(45deg); }
+
       /* ---- Calm: slower fades, nothing that moves ---- */
       .calm #line span.on { transition-duration: 2.6s; }
       .calm #line span { transition-duration: 1.8s; }
       .calm .pane.on, .calm #actions.on, .calm #ui { transition-duration: 1.6s; }
       .calm .knob::after { transition-duration: .01s; }
+      /* Slow only the fade: visibility must stay instant, or the heading is still hidden when focus moves to it. */
+      .calm .step.on { transition: opacity 1.2s var(--ease) .1s, visibility 0s; }
     </style>
   </head>
   <body>
@@ -281,6 +355,7 @@
     <p id="status" class="sr" role="status" aria-live="polite"></p>
 
     <div id="ui" data-scene="free">
+      <button id="about" type="button" aria-haspopup="dialog" aria-controls="welcome"></button>
       <button id="gear" type="button" aria-haspopup="dialog" aria-controls="sheet" aria-expanded="false" aria-label="options">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>
       </button>
@@ -317,6 +392,45 @@
       </div>
     </div>
 
+    <div id="welcome" class="sheet" role="dialog" aria-modal="true" data-ui inert>
+      <div class="card">
+        <div class="welcome-top">
+          <span id="welcome-dots" class="wdots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <button class="btn quiet" id="welcome-skip" type="button"></button>
+        </div>
+        <div id="welcome-steps" class="steps"></div>
+        <div class="row">
+          <button class="btn quiet" id="welcome-back" type="button"></button>
+          <button class="btn" id="welcome-next" type="button"></button>
+        </div>
+        <button class="btn primary wide" id="welcome-start" type="button"></button>
+        <p class="small" id="welcome-notice"></p>
+      </div>
+    </div>
+
+    <div id="feedback-sheet" class="sheet top" role="dialog" aria-modal="true" aria-labelledby="feedback-title" data-ui inert>
+      <div class="card">
+        <h2 id="feedback-title"></h2>
+        <p class="small first" id="feedback-note"></p>
+        <form id="feedback-form" novalidate>
+          <label class="field" for="fb-message"><span id="fb-message-label"></span></label>
+          <textarea id="fb-message" name="message" rows="4" maxlength="2000" required></textarea>
+          <label class="field" for="fb-email"><span id="fb-email-label"></span></label>
+          <input id="fb-email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="200" />
+          <div class="trap" aria-hidden="true">
+            <label><span id="fb-trap-label"></span><input id="fb-botcheck" name="botcheck" type="checkbox" tabindex="-1" autocomplete="off" /></label>
+          </div>
+          <p id="fb-status" class="fb-status" role="status" aria-live="polite"></p>
+          <button class="btn primary wide" id="fb-send" type="submit"></button>
+        </form>
+        <div id="contact" hidden>
+          <h3 id="contact-title"></h3>
+          <ul id="contact-links"></ul>
+        </div>
+        <button class="btn quiet wide" id="feedback-close" type="button"></button>
+      </div>
+    </div>
+
     <div id="pace-sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="pace-title" data-ui inert>
       <div class="card">
         <h2 id="pace-title"></h2>
@@ -342,6 +456,9 @@
         </button>
         <button class="switch" id="sw-awake" type="button" role="switch" aria-checked="true">
           <span class="t"><b></b><i></i></span><span class="knob"></span>
+        </button>
+        <button class="switch" id="open-feedback" type="button" aria-haspopup="dialog" aria-controls="feedback-sheet">
+          <span class="t"><b></b><i></i></span><span class="chev" aria-hidden="true"></span>
         </button>
         <p class="small" id="privacy"></p>
         <p class="small" id="notice-long"></p>

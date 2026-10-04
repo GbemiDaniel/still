@@ -39,3 +39,14 @@ export function savePace(s: Saved): void {
 export function forgetSaved(): void {
   try { localStorage.removeItem(KEY); } catch { /* nothing to remove */ }
 }
+
+// Whether this device has already been shown the welcome. Nothing else about the visit is kept.
+const WELCOME_KEY = 'still.welcome.v1';
+
+export function seenWelcome(): boolean {
+  try { return localStorage.getItem(WELCOME_KEY) === '1'; } catch { return false; }
+}
+
+export function markWelcome(): void {
+  try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* storage off: it may show again next visit */ }
+}
